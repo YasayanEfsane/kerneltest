@@ -1,7 +1,7 @@
 
 # Project Obsidian Clock - Türkçe Dokümantasyon
 
-## Windows Kernel Ring-0 Tersine Mühendislik Grand Challenge
+## Windows Kernel Ring-0 Tersine Mühendislik Test
 
 Bu dokümantasyon, sentetik bir Windows 11 x64 telemetri ve politika sürücüsü olan `ObsidianClock.sys` üzerinde gerçekleştirilen kapsamlı tersine mühendislik analizinin sonuçlarını içerir.
 
