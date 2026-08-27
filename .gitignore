@@ -1,5 +1,42 @@
-node_modules/
-.next/
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg-info/
+.eggs/
+
+# Dependencies
+.venv/
+venv/
+.env
+.env.local
+*.env.*
+
+# Build and distribution
 dist/
 build/
+*.egg
+*.whl
+coverage/
+htmlcov/
+.coverage
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
+```node_modules/
+.next/
