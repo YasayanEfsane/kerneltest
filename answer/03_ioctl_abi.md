@@ -12,17 +12,17 @@ CTL_CODE(DeviceType, Function, Method, Access) =
 Where:
 - **DeviceType**: bits 16-31 (FILE_DEVICE_* values)
 - **Access**: bits 14-15 (FILE_ANY_ACCESS=0, FILE_READ_ACCESS=1, FILE_WRITE_ACCESS=2, FILE_READ_DATA|FILE_WRITE_DATA=3)
-- **Function**: bits 2-13 (0-0x7FF, custom codes start at 0x800)
+- **Function**: bits 2-13 (0-0xFFF, vendor-defined codes typically start at 0x800)
 - **Method**: bits 0-1 (METHOD_BUFFERED=0, METHOD_IN_DIRECT=1, METHOD_OUT_DIRECT=2, METHOD_NEITHER=3)
 
 ### Decoding Table
 
 | IOCTL (hex) | Binary Breakdown | Device Type | Access | Function | Method | Semantic Name |
 |-------------|------------------|-------------|--------|----------|--------|---------------|
-| 0x8337E404 | `10000011001101111110010000000100` | 0x8337 | 0x03 | 0x790 | 0x00 | IOCTL_OC_CREATE_SESSION |
-| 0x8337E409 | `10000011001101111110010000001001` | 0x8337 | 0x03 | 0x792 | 0x01 | IOCTL_OC_SUBMIT_POLICY |
-| 0x8337E40E | `10000011001101111110010000001110` | 0x8337 | 0x03 | 0x794 | 0x02 | IOCTL_OC_GET_COUNTERS |
-| 0x8337E410 | `10000011001101111110010000010000` | 0x8337 | 0x03 | 0x796 | 0x00 | IOCTL_OC_CLOSE_SESSION |
+| 0x8337E404 | `10000011001101111110010000000100` | 0x8337 | 0x03 | 0x901 | 0x00 | IOCTL_OC_CREATE_SESSION |
+| 0x8337E409 | `10000011001101111110010000001001` | 0x8337 | 0x03 | 0x902 | 0x01 | IOCTL_OC_SUBMIT_POLICY |
+| 0x8337E40E | `10000011001101111110010000001110` | 0x8337 | 0x03 | 0x903 | 0x02 | IOCTL_OC_GET_COUNTERS |
+| 0x8337E410 | `10000011001101111110010000010000` | 0x8337 | 0x03 | 0x904 | 0x00 | IOCTL_OC_CLOSE_SESSION |
 
 ### Detailed Decoding
 
@@ -34,7 +34,7 @@ Binary:   10000011 00110111 11100100 00000100
 
 DeviceType:  0x8337 (bits 16-31) = 33591 (vendor-specific)
 Access:      0x03  (bits 14-15) = FILE_READ_ACCESS | FILE_WRITE_ACCESS
-Function:    0x790 (bits 2-13)  = 1936
+Function:    0x901 (bits 2-13)  = 2305
 Method:      0x00  (bits 0-1)   = METHOD_BUFFERED
 ```
 
@@ -52,7 +52,7 @@ Binary:   10000011 00110111 11100100 00001001
 
 DeviceType:  0x8337 (bits 16-31) = 33591
 Access:      0x03  (bits 14-15) = FILE_READ_ACCESS | FILE_WRITE_ACCESS
-Function:    0x792 (bits 2-13)  = 1938
+Function:    0x902 (bits 2-13)  = 2306
 Method:      0x01  (bits 0-1)   = METHOD_IN_DIRECT
 ```
 
@@ -70,7 +70,7 @@ Binary:   10000011 00110111 11100100 00001110
 
 DeviceType:  0x8337 (bits 16-31) = 33591
 Access:      0x03  (bits 14-15) = FILE_READ_ACCESS | FILE_WRITE_ACCESS
-Function:    0x794 (bits 2-13)  = 1940
+Function:    0x903 (bits 2-13)  = 2307
 Method:      0x02  (bits 0-1)   = METHOD_OUT_DIRECT
 ```
 
@@ -88,7 +88,7 @@ Binary:   10000011 00110111 11100100 00010000
 
 DeviceType:  0x8337 (bits 16-31) = 33591
 Access:      0x03  (bits 14-15) = FILE_READ_ACCESS | FILE_WRITE_ACCESS
-Function:    0x796 (bits 2-13)  = 1942
+Function:    0x904 (bits 2-13)  = 2308
 Method:      0x00  (bits 0-1)   = METHOD_BUFFERED
 ```
 
