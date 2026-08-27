@@ -1,293 +1,164 @@
-# 02_architecture.md - Obsidian Clock Architecture Reconstruction
+# Architecture reconstruction
 
-## Driver Lifecycle
+## Scope
 
-### Entry Point (DriverEntry)
-**DERIVED** from [E-PE-03], [E-PE-02]
+This reconstruction uses only the evidence capsules.  There is no binary from
+which to recover a complete call graph, callback table, unload routine, precise
+IRQL contract, or private type information.  Names beginning with `Oc` are
+analyst labels derived from behaviour or stack summaries, not recovered symbols
+unless a capsule explicitly supplies them.
 
-```
-DriverEntry()
-├── IoCreateDevice(\\Device\\ObClock) → DeviceObject
-├── IoCreateSymbolicLink(\\DosDevices\\ObClock)
-├── Install DeviceControl dispatch routine
-├── ExInitializeResourceLite(&g_SessionResource)
-├── Allocate 256-slot event ring buffer
-├── KeInitializeEvent(&g_DrainEvent)
-├── Register shutdown callback
-├── FltRegisterFilter()
-├── FltStartFiltering()
-├── FltCreateCommunicationPort() → User-mode communication
-└── Return STATUS_SUCCESS
-```
+## Observed components
 
-**IRQL:** PASSIVE_LEVEL
-**Locks acquired:** None initially
+**FACT — `[E-PE-03]`:** the reachable initialization path creates
+`\Device\ObClock`, publishes `\DosDevices\ObClock`, installs a device-control
+dispatch routine, registers and starts a minifilter, creates a user-mode
+communication port, initializes an `ERESOURCE`, allocates a 256-slot shared
+event ring, and registers a shutdown callback.
 
-### Unload Path
-**HYPOTHESIS** - Not directly observed in evidence capsules
-
-```
-DriverUnload()
-├── Unregister shutdown callback
-├── Close communication port
-├── FltUnregisterFilter()
-├── Delete symbolic link
-├── Delete device object
-├── Free ring buffer
-├── ExDeleteResourceLite(&g_SessionResource)
-└── Return
-```
-
-**Confidence:** Medium (inferred from standard driver patterns)
-
----
-
-## Component Architecture Diagram
+**FACT — `[E-PE-02]`:** imports include the I/O, executive-resource, event,
+Filter Manager, allocation, image, and CFG functions listed in the evidence
+ledger.  An import establishes availability, not a call site by itself.
 
 ```mermaid
 flowchart TB
-    subgraph UserMode["User Mode (WOW64)"]
-        ClockSvc["ClockSvc.exe<br/>32-bit WOW64"]
-    end
+    Svc["ClockSvc.exe (WOW64)"]
+    Device["ObClock control device"]
+    Port["Filter communication port"]
+    Core["Session and ring lifetime"]
+    Analysis["OCVM2 and image integrity"]
 
-    subgraph KernelMode["Kernel Mode"]
-        subgraph Obsidian["ObsidianClock.sys"]
-            Dispatch["DeviceControl<br/>Dispatch"]
-            SessionMgr["Session Manager<br/>g_SessionResource"]
-            RingBuffer["Event Ring Buffer<br/>256 slots"]
-            CancelMgr["Cancellation Manager"]
-            VM["OCVM2 Policy VM<br/>Validator + Interpreter"]
-            Integrity["Self-Integrity<br/>Relocation Normalizer"]
-            DrainWorker["Drain Worker Thread"]
-        end
-        
-        subgraph FLTMGR["fltmgr.sys"]
-            MiniFilter["Minifilter"]
-            CommPort["Communication Port"]
-        end
-        
-        subgraph Executive["NT Executive"]
-            IoMgr["I/O Manager"]
-            Ps["Process Manager"]
-        end
-    end
-
-    ClockSvc -->|DeviceIoControl<br/>IOCTLs| Dispatch
-    ClockSvc -->|FltSendMessage| CommPort
-    
-    Dispatch --> SessionMgr
-    Dispatch --> RingBuffer
-    Dispatch --> VM
-    Dispatch --> Integrity
-    
-    SessionMgr --> DrainWorker
-    RingBuffer --> CancelMgr
-    CancelMgr --> RingBuffer
-    
-    MiniFilter --> CommPort
-    
-    style Obsidian fill:#e1f5ff
-    style FLTMGR fill:#f0f0f0
-    style Executive fill:#f9f9f9
+    Svc -->|"DeviceIoControl"| Device
+    Device --> Core
+    Device --> Analysis
+    Core -->|"FltSendMessage: kernel to user"| Port
+    Port --> Svc
+    Svc -.->|"FilterSendMessage: possible user-to-kernel path"| Port
 ```
 
----
+`FltSendMessage` is a kernel minifilter API for sending to a connected
+user-mode client.  A user-mode client would use Filter Manager APIs such as
+`FilterGetMessage`, `FilterReplyMessage`, or `FilterSendMessage`; the capsules
+do not establish which of these `ClockSvc.exe` calls.  The dashed edge is
+therefore an **INFERENCE**, not a recovered call.
 
-## Session State Machine
+## Initialization and teardown
 
-**DERIVED** from [E-LOCK-03], [E-IO-02], [E-RING-01]
+The following responsibilities are facts, but their exact order and cleanup
+unwind logic are unknown:
+
+| Responsibility | Basis | Confidence |
+|---|---|---:|
+| Control device and symbolic link | `[E-PE-03]` | High |
+| Device-control dispatch | `[E-PE-03]` | High |
+| Filter registration, start, communication port | `[E-PE-03]` | High |
+| Session resource and drain event | `[E-PE-02]`, `[E-LOCK-*]` | High |
+| 256-slot ring | `[E-PE-03]`, `[E-RING-01]` | High |
+| Shutdown callback | `[E-PE-03]` | High |
+| Unload callback and cleanup order | not supplied | Unknown |
+| Partial-initialization unwind | not supplied | Unknown |
+
+It would be reasonable for a real driver to undo these registrations during
+unload, but writing a conventional unload sequence here would be a design
+proposal rather than recovered behaviour.
+
+## Control-plane dispatch
+
+`[E-IO-01]` supplies four jump-table targets.  `[E-IO-02]` supplies their
+semantics.  The table does not prove full function prototypes or every status
+path.
+
+| Target RVA | IOCTL | Analyst label | Evidence-backed purpose |
+|---:|---:|---|---|
+| `0x67D0` | `0x8337E404` | `OcNegotiateSession` | Establish/negotiate session |
+| `0x6AE0` | `0x8337E409` | `OcSubmitPolicy` | Submit policy buffer |
+| `0x71B0` | `0x8337E40E` | `OcQueryHealth` | Return counters/health information |
+| `0x7770` | `0x8337E410` | `OcCloseSession` | Close and request drain |
+
+The exact decoded bit fields are in [`03_ioctl_abi.md`](03_ioctl_abi.md).
+
+## Session lifecycle
+
+The state names below are an **INFERENCE** that explains `[E-IO-02]` and
+`[E-LOCK-03]`; only the close behaviour is shown as pseudocode in the evidence.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> IDLE: Session created
-    
-    state IDLE {
-        [*] --> ACTIVE: IOCTL 0x8337E404 (negotiate)
-    }
-    
-    state ACTIVE {
-        [*] --> READY
-        READY --> PRODUCING: Event publication
-        PRODUCING --> READY: Slot published
-        READY --> POLICY_LOADED: IOCTL 0x8337E409
-        POLICY_LOADED --> READY: Policy validated
-        READY --> COUNTERS_READY: IOCTL 0x8337E40E
-        COUNTERS_READY --> READY: Counters returned
-    }
-    
-    ACTIVE --> CLOSING: IOCTL 0x8337E410
-    CLOSING --> DRAINING: Drain work queued
-    DRAINING --> [*]: g_DrainEvent signaled, FinalizeSession
-    
-    note right of CLOSING
-        DEFECT: Holds exclusive lock
-        while waiting for drain
-    end note
-    
-    note right of DRAINING
-        DEFECT: Drain worker needs
-        shared lock to complete
-    end note
+    [*] --> Negotiating
+    Negotiating --> Active: valid hello
+    Active --> Closing: close IOCTL
+    Closing --> Draining: no new work
+    Draining --> Finalized: outstanding equals zero
+    Finalized --> [*]
 ```
 
-### Session States
+Required lifetime properties are:
 
-| State | Description | Transitions |
-|-------|-------------|-------------|
-| IDLE | No active session | → ACTIVE on successful negotiation |
-| ACTIVE | Session established | Multiple substates for operations |
-| CLOSING | Close requested, waiting for drain | → DRAINING after work queued |
-| DRAINING | Outstanding records being completed | → TERMINAL when count reaches 0 |
-| TERMINAL | Session finalized, resources freed | → [*] |
+- only an active session accepts new work;
+- transition to closing is atomic;
+- outstanding work holds explicit ownership until completion;
+- finalization happens once and only after rundown;
+- no blocking wait occurs while holding the resource needed by drain work.
 
----
+The supplied implementation violates the last property; see
+[`05_deadlock.md`](05_deadlock.md).
 
-## Ring Slot State Machine
+## Ring-slot lifecycle
 
-**FACT** from [E-RING-01]
+The numeric states are facts from `[E-RING-01]`.  Individual legal edges beyond
+the supplied reserve/publish/cancel/consume behaviour are partly inferred.
 
 ```mermaid
 stateDiagram-v2
-    direction LR
-    
-    FREE --> RESERVED: Producer reserves slot
-    RESERVED --> READY: Data published
-    READY --> CONSUMING: Consumer begins processing
-    CONSUMING --> FREE: Processing complete
-    READY --> CANCELLED: Cancellation requested
-    CONSUMING --> CANCELLED: Cancellation during processing
-    CANCELLED --> FREE: Cleanup complete
-    RESERVED --> CANCELLED: Cancel before publish
-    
-    note right of FREE
-        State = 0
-        Available for allocation
-    end note
-    
-    note right of RESERVED
-        State = 1
-        Slot allocated, data pending
-    end note
-    
-    note right of READY
-        State = 2
-        Data ready for consumption
-    end note
-    
-    note right of CONSUMING
-        State = 3
-        Being processed by consumer
-    end note
-    
-    note right of CANCELLED
-        State = 4
-        Terminal state, cleanup needed
-    end note
+    [*] --> FREE
+    FREE --> RESERVED: reserve
+    RESERVED --> READY: publish payload
+    READY --> CONSUMING: consumer wins
+    RESERVED --> CANCELLED: cancellation wins
+    READY --> CANCELLED: cancellation wins
+    CONSUMING --> FREE: terminal owner and detach
+    CANCELLED --> FREE: terminal owner and detach
 ```
 
-### State Transition Invariants
+The critical missing guard is not a state name: `[E-RING-06]` says a slot can
+return to `FREE` without proof that all cancellation contexts for the previous
+occupant have detached.  The 16-bit generation and reusable owner ID can then
+form the same truncated identity for a different occupant.  See
+[`04_ring_lifetime.md`](04_ring_lifetime.md).
 
-**DEFECT** per [E-RING-06]: Transition CANCELLED→FREE or CONSUMING→FREE does not verify cancellation contexts are detached.
-
----
-
-## Lock/Wait Graph
-
-**FACT** from [E-LOCK-01], [E-LOCK-02], [E-LOCK-03]
+## Wait graph
 
 ```mermaid
 flowchart TD
-    subgraph Threads
-        T41["Thread T41<br/>(Close IOCTL)"]
-        T73["Thread T73<br/>(Drain Worker)"]
-    end
-    
-    subgraph Resources
-        SessionRes["g_SessionResource<br/>(ERESOURCE)"]
-        DrainEvent["g_DrainEvent<br/>(KEVENT)"]
-    end
-    
-    T41 -->|Holds EXCLUSIVE| SessionRes
-    T41 -->|Waiting on| DrainEvent
-    
-    T73 -->|Waiting to acquire SHARED| SessionRes
-    T73 -->|Can signal| DrainEvent
-    
-    style T41 fill:#ffcccc
-    style T73 fill:#ffcccc
-    style SessionRes fill:#ffffcc
-    style DrainEvent fill:#ccffcc
-    
-    note right of T41
-        Owns exclusive lock,<br/>waits for event
-    end note
-    
-    note right of T73
-        Needs shared lock to<br/>decrement counter and<br/>signal event
-    end note
+    T41["T41: close IOCTL"] -->|"owns exclusive"| R["g_SessionResource"]
+    T41 -->|"waits"| E["g_DrainEvent"]
+    T73["T73: drain worker"] -->|"waits for shared"| R
+    T73 -->|"only remaining signal path"| E
 ```
 
-### Deadlock Cycle Proof
+This is a closed wait cycle because T41 cannot release the resource while its
+wait is pending, and T73 cannot signal the event without acquiring that
+resource.  The service thread is blocked in the close IOCTL and supplies no
+independent breaker `[E-LOCK-04]`.
 
-**DERIVED** from wait-for graph:
+## Other recovered paths
 
-1. T41 holds `g_SessionResource` exclusively
-2. T41 waits for `g_DrainEvent` to be signaled
-3. Only T73 can signal `g_DrainEvent` (when OutstandingRecords → 0)
-4. T73 waits to acquire `g_SessionResource` shared
-5. ERESOURCE semantics: shared acquisition blocked while exclusive held
-6. **Cycle:** T41 → waits for event ← T73 → waits for lock → T41
+| Path | Evidence | What is established | What remains unknown |
+|---|---|---|---|
+| Cancellation worker and two completion stacks | `[E-RING-05]` | Both paths reach `IofCompleteRequest` for one logical failure | Complete IRP ownership implementation |
+| Policy validator/interpreter | `[E-VM-02]`, `[E-VM-03]` | Different branch-unit calculations | Full opcode set and policy header |
+| Image normalizer/hash | `[E-INT-01]`–`[E-INT-04]` | Relocation normalization precedes hashing and mishandles type 0 | Exact section set and digest algorithm |
+| CFG dispatch | `[E-PE-01]`, `[E-PE-04]` | GuardCF is enabled | No evidence of custom obfuscation |
 
-**Conclusion:** Classic lock-holder-waiting-for-lock-dependent-operation deadlock.
+## Trust boundaries
 
----
+| Boundary | Required validation |
+|---|---|
+| User buffer to kernel control plane | IOCTL access/method, actual input length, version, field bounds |
+| WOW64 wire packet to native driver | Explicit byte serialization; no native struct casting |
+| Policy bytes to OCVM2 | Complete structural and control-flow validation before execution |
+| Ring ticket to current occupant | Full occupant identity plus attached-lifetime proof |
+| Mapped PE bytes to integrity digest | Strict relocation parsing, mapped-range bounds, explicit type dispatch |
 
-## Function Registry
-
-### Recovered Functions
-
-| Name | RVA | IRQL | Inputs | Outputs | Locks | Evidence |
-|------|-----|------|--------|---------|-------|----------|
-| `OcCreateSession` | 0x67D0 | PASSIVE | PID, Nonce, Caps, CRC | SessionHandle | None | [E-IO-01], [E-IO-05] |
-| `OcSubmitPolicy` | 0x6AE0 | PASSIVE | PolicyBuffer, Length | Status | SessionResource (shared?) | [E-IO-01], [E-IO-02] |
-| `OcGetCounters` | 0x71B0 | PASSIVE | OutputBuffer | Counters | None | [E-IO-01], [E-IO-02] |
-| `OcCloseSession` | 0x7770 | PASSIVE | SessionHandle | Status | SessionResource (exclusive) | [E-IO-01], [E-LOCK-03] |
-| `OcCancelWorkItem` | Unknown | PASSIVE | Ticket | None | CancelSpinLock | [E-RING-05] |
-| `OcCompleteCancelledRequest` | Unknown | ≤DISPATCH_LEVEL | IRP | None | None | [E-RING-05] |
-| `OcCompleteReadySlot` | Unknown | ≤DISPATCH_LEVEL | IRP | None | None | [E-RING-05] |
-| `OcDrainDpc` | Unknown | DISPATCH_LEVEL | DPC | None | None | [E-RING-05] |
-| `OcDrainWorker` | Unknown | PASSIVE | Session | None | SessionResource (shared) | [E-LOCK-02] |
-| `OcDrainFinalRecord` | Unknown | PASSIVE | Session | None | SessionResource (shared) | [E-LOCK-02] |
-| `OcValidatePolicy` | Unknown | PASSIVE | PolicyBuffer | Status | None | [E-VM-02] |
-| `OcInterpretPolicy` | Unknown | PASSIVE | PolicyBuffer | Status/Fault | None | [E-VM-03] |
-| `OcNormalizeAndHash` | Unknown | PASSIVE | ImageBase, Delta | Hash | None | [E-INT-03] |
-
-### Trust Boundaries
-
-| Boundary | Components Separated | Validation Required |
-|----------|---------------------|---------------------|
-| User/Kernel | ClockSvc ↔ ObsidianClock | IOCTL buffer validation, size checks |
-| WOW64/Native | 32-bit client ↔ 64-bit driver | Explicit wire format, no struct casting |
-| Driver/Filter | ObsidianClock ↔ FLTMGR | Filter message validation |
-| Kernel/User Port | CommPort ↔ ClockSvc | Port message validation |
-
----
-
-## Architecture Confidence Assessment
-
-| Component | Confidence | Notes |
-|-----------|------------|-------|
-| Device creation | High | Direct evidence [E-PE-03] |
-| Symbolic link | High | Direct evidence [E-PE-03] |
-| Minifilter registration | High | Direct evidence [E-PE-03], imports [E-PE-02] |
-| Communication port | High | Direct evidence [E-PE-03] |
-| ERESOURCE initialization | High | Import ExInitializeResourceLite [E-PE-02] |
-| Ring buffer allocation | High | Direct evidence [E-PE-03], [E-RING-01] |
-| Shutdown callback | Medium | Mentioned in [E-PE-03], details unknown |
-| Session state machine | Medium | Derived from close behavior [E-LOCK-03] |
-| Cancel routine registration | Medium | Imports present [E-PE-02], usage in traces [E-RING-05] |
-| VM validator/interpreter split | High | Direct decompilation [E-VM-02], [E-VM-03] |
-| Integrity normalizer | High | Direct decompilation [E-INT-03] |
-
----
-*End of Architecture Reconstruction*
+These boundaries describe defensive requirements; they are not evidence of a
+real deployed security product.

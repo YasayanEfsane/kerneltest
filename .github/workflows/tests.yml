@@ -1,30 +1,25 @@
-name: Tests
+name: tests
 
 on:
   push:
-    branches: [ master ]
   pull_request:
-    branches: [ master ]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  python:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
-
     steps:
-    - uses: actions/checkout@v4
-
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Compile check
-      run: |
-        python -m compileall -q answer
-
-    - name: Run tests
-      run: |
-        PYTHONPATH=. python -m unittest discover -s answer/tests -p "test_*.py" -v
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile Python sources
+        run: python -m compileall -q answer
+      - name: Run regression suite
+        run: python -m unittest discover -s answer/tests -p "test_*.py" -v

@@ -50,7 +50,10 @@ The directory `/case/obsidian_clock/` does not exist. All analysis must proceed 
 
 ## 3. Integrity Verification Status
 
-**NOT APPLICABLE** - No physical artifacts exist to hash. All evidence is provided as textual capsules. SHA-256 hashes cannot be computed for input artifacts. Generated tools and reports will have their hashes recorded upon creation.
+**NOT APPLICABLE TO INPUT ARTIFACTS** - No physical case artifacts exist to
+hash.  All case evidence is provided as textual capsules, so an input
+chain-of-custody digest cannot be reconstructed.  Repository files remain
+versioned by Git; that is not a substitute for missing evidence hashes.
 
 ## 4. Initial Architecture Hypothesis
 
@@ -77,51 +80,51 @@ Based on evidence capsules, `ObsidianClock.sys` appears to be a Windows kernel-m
 
 ## 5. Investigation Plan
 
-### Phase A - Evidence Intake (Current)
+### Phase A - Evidence Intake (Completed)
 - Document operating mode and evidence availability
 - Create evidence ledger with all capsule references
 - Establish initial architecture hypothesis
 
-### Phase B - Architecture Reconstruction
+### Phase B - Architecture Reconstruction (Completed)
 - Document driver lifecycle from entry to unload
 - Map device control dispatch table
 - Document session state machine
 - Document ring buffer state machine
 - Produce Mermaid diagrams for components
 
-### Phase C - IOCTL/ABI Analysis
+### Phase C - IOCTL/ABI Analysis (Completed)
 - Decode all four IOCTL codes mathematically
 - Reconstruct V2 negotiation packet byte-by-byte
 - Explain WOW64 packing effects
 - Implement decode_ioctl.py and decode_hello.py
 - Write comprehensive tests
 
-### Phase D - Ring Lifetime Analysis
+### Phase D - Ring Lifetime Analysis (Completed as bounded model)
 - Define formal invariants
 - Construct failing interleaving trace
 - Implement model_ring.py with ABA reproduction
 - Design corrected ownership/cancellation protocol
-- Verify corrected model eliminates violation
+- Verify that the corrected model has no violation within its declared bound
 
-### Phase E - Deadlock Analysis
+### Phase E - Deadlock Analysis (Completed as design analysis)
 - Construct wait-for graph
 - Prove cycle existence
 - Design corrected close protocol
 - Specify regression tests
 
-### Phase F - OCVM2 Reconstruction
+### Phase F - OCVM2 Reconstruction (Completed for supplied opcode subset)
 - Implement ocvm_disasm.py
 - Implement ocvm_reference.py
 - Demonstrate validator/interpreter divergence
 - Write test_ocvm.py
 
-### Phase G - Integrity Analysis
+### Phase G - Integrity Analysis (Completed on synthetic mapped bytes)
 - Model relocation parsing
 - Demonstrate normalization defect
 - Implement normalize_relocations.py
 - Write test_relocations.py
 
-### Phase H - Red Herring Control
+### Phase H - Red Herring Control (Completed)
 - Address each `[E-RH-*]` item
 - Justify classification
 
@@ -131,10 +134,12 @@ Based on evidence capsules, `ObsidianClock.sys` appears to be a Windows kernel-m
 - Validation plan
 - Turkish final report
 
-## 6. Statement of Commencement
+## 6. Completion status
 
-**Evidence analysis begins immediately following this intake document.** The next deliverable will be the evidence ledger (`01_evidence_ledger.md`) followed by architecture reconstruction (`02_architecture.md`).
+The evidence ledger, focused reports, safe tools, regression tests, patch design,
+validation plan, and Turkish final report are present.  Their conclusions remain
+bounded by the missing-artifact statement above.
 
 ---
-*Generated as part of Project Obsidian Clock forensic investigation.*
-*All evidence sourced from provided capsules. No external artifacts accessed.*
+*All case evidence is sourced from the provided capsules. No external case
+artifacts were accessed.*
