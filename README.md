@@ -1,7 +1,4 @@
---- answer/README.md (原始)
 
-
-+++ answer/README.md (修改后)
 # Project Obsidian Clock - Türkçe Dokümantasyon
 
 ## Windows Kernel Ring-0 Tersine Mühendislik Grand Challenge
@@ -10,7 +7,7 @@ Bu dokümantasyon, sentetik bir Windows 11 x64 telemetri ve politika sürücüs�
 
 ---
 
-## 📋 İçindekiler
+##  İçindekiler
 
 1. [Yönetici Özeti](#yönetici-özeti)
 2. [İnceleme Kapsamı ve Yetkilendirme](#inceleme-kapsamı-ve-yetkilendirme)
